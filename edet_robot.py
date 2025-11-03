@@ -1,4 +1,3 @@
-# robot_control_gpiozero.py
 import cv2
 import zmq
 import base64
@@ -6,17 +5,23 @@ import numpy as np
 import time
 import socket
 from gpiozero import Robot, DigitalOutputDevice
+from gpiozero.pins.pigpio import PiGPIOFactory
 import threading
 
 class RobotController:
     def __init__(self, video_port=5555, control_port=5556):
-        # Настройка робота с gpiozero
-        # Формат: Robot(left=(forward_pin, backward_pin), right=(forward_pin, backward_pin))
-        self.robot = Robot(left=(17, 18), right=(22, 23))
+        # Используем pigpio фабрику
+        pin_factory = PiGPIOFactory()
         
-        # Дополнительные устройства (например, для света или сервоприводов)
-        self.led = DigitalOutputDevice(24)  # Пример для светодиода
+        # Настройка робота с явным указанием фабрики
+        self.robot = Robot(
+            left=(17, 18), 
+            right=(22, 23),
+            pin_factory=pin_factory
+        )
         
+        # Дополнительные устройства
+        self.led = DigitalOutputDevice(24, pin_factory=pin_factory)
         # Порты для видео и управления
         self.video_port = video_port
         self.control_port = control_port
