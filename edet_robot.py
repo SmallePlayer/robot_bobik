@@ -1,12 +1,16 @@
 from gpiozero import Robot
+from gpiozero.pins.lgpio import LGPIOFactory
 import socket
 import threading
 
-# Настройка моторов через gpiozero
-robot = Robot(left=(17, 18), right=(22, 23))  # Левый и правый моторы
+# Явно указываем фабрику пинов для Raspberry Pi 5
+pin_factory = LGPIOFactory()
 
-# Настройка сетевого сервера
-HOST = '0.0.0.0'  # Слушать все интерфейсы
+# Настройка моторов с указанием фабрики пинов
+robot = Robot(left=(17, 18), right=(22, 23), pin_factory=pin_factory)
+
+# Остальной код без изменений...
+HOST = '0.0.0.0'
 PORT = 8888
 
 def handle_client(conn):
@@ -15,7 +19,6 @@ def handle_client(conn):
         if not data:
             break
         
-        # Обработка команд WASD
         if data == 'w':
             robot.forward()
         elif data == 's':
