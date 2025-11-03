@@ -74,7 +74,7 @@ class CameraStreamer:
                     except zmq.ZMQError as e:
                         print(f"Ошибка отправки: {e}")
                 
-                time.sleep(0.066)  # ~15 FPS
+                time.sleep(0.033)  # ~15 FPS
                 
         except KeyboardInterrupt:
             print(f"\nВсего отправлено кадров: {self.frame_count}")
