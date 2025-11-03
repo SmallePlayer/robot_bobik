@@ -1,43 +1,82 @@
+import zmq
 from gpiozero import Robot
-from gpiozero.pins.lgpio import LGPIOFactory
-import socket
-import threading
+import json
 
-# Явно указываем фабрику пинов для Raspberry Pi 5
-pin_factory = LGPIOFactory()
-
-# Настройка моторов с указанием фабрики пинов
-robot = Robot(left=(17, 18), right=(22, 23), pin_factory=pin_factory)
-
-# Остальной код без изменений...
-HOST = '0.0.0.0'
-PORT = 8888
-
-def handle_client(conn):
-    while True:
-        data = conn.recv(1024).decode().strip()
-        if not data:
-            break
+class RobotController:
+    def __init__(self):
+        # Инициализация робота с указанием пинов
+        self.robot = Robot(left=(12, 13), right=(19, 18))
+        self.current_speed = 0.7  # Базовая скорость (0.0 до 1.0)
         
-        if data == 'w':
-            robot.forward()
-        elif data == 's':
-            robot.backward()
-        elif data == 'a':
-            robot.left()
-        elif data == 'd':
-            robot.right()
-        elif data == 'x':
-            robot.stop()
-        print(f"Received: {data}")
+    def execute_command(self, command):
+        """Выполняет команду движения"""
+        try:
+            if command == "forward":
+                self.robot.forward(self.current_speed)
+                print("🔼 ДВИЖЕНИЕ ВПЕРЕД")
+            elif command == "backward":
+                self.robot.backward(self.current_speed)
+                print("🔽 ДВИЖЕНИЕ НАЗАД")
+            elif command == "left":
+                self.robot.left(self.current_speed)
+                print("↩️  ПОВОРОТ ВЛЕВО")
+            elif command == "right":
+                self.robot.right(self.current_speed)
+                print("↪️  ПОВОРОТ ВПРАВО")
+            elif command == "stop":
+                self.robot.stop()
+                print("⏹️  СТОП")
+            elif command.startswith("speed:"):
+                # Изменение скорости: "speed:0.8"
+                new_speed = float(command.split(":")[1])
+                if 0.1 <= new_speed <= 1.0:
+                    self.current_speed = new_speed
+                    print(f"🎚️  Скорость изменена: {new_speed}")
+            else:
+                print(f"❌ Неизвестная команда: {command}")
+                
+        except Exception as e:
+            print(f"❌ Ошибка выполнения команды: {e}")
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))
-    s.listen()
-    print(f"Server listening on {HOST}:{PORT}")
+def main():
+    # Настройка ZMQ
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)  # REP (reply) для ответов
+    socket.bind("tcp://*:5555")       # Слушаем на всех интерфейсах порт 5555
     
-    while True:
-        conn, addr = s.accept()
-        print(f"Connected by {addr}")
-        thread = threading.Thread(target=handle_client, args=(conn,))
-        thread.start()
+    robot = RobotController()
+    
+    print("🤖 СЕРВЕР УПРАВЛЕНИЯ РОБОТОМ ЗАПУЩЕН")
+    print("📍 Адрес для подключения: tcp://[IP_РОБОТА]:5555")
+    print("📝 Ожидание команд...")
+    print("Доступные команды: forward, backward, left, right, stop, speed:X.X")
+    
+    try:
+        while True:
+            # Ожидаем команду от клиента
+            message = socket.recv_string()
+            print(f"📨 Получена команда: {message}")
+            
+            # Выполняем команду
+            robot.execute_command(message)
+            
+            # Отправляем подтверждение
+            response = {
+                "status": "success",
+                "command": message,
+                "speed": robot.current_speed
+            }
+            socket.send_string(json.dumps(response))
+            
+    except KeyboardInterrupt:
+        print("\n🛑 Остановка сервера...")
+    except Exception as e:
+        print(f"❌ Ошибка сервера: {e}")
+    finally:
+        robot.robot.stop()
+        socket.close()
+        context.term()
+        print("🔴 Сервер остановлен, моторы выключены")
+
+if __name__ == "__main__":
+    main()
