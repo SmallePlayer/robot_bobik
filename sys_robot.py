@@ -120,3 +120,66 @@ class SysfsRobotController:
         print("🧹 Робот остановлен")
 
 # Остальной код (main функция) остается таким же как в предыдущих примерах
+
+
+def main():
+    print("=" * 50)
+    print("🤖 СЕРВЕР УПРАВЛЕНИЯ РОБОТОМ С GPIOd")
+    print("=" * 50)
+    
+    # Проверяем наличие библиотеки gpiod
+    try:
+        import gpiod
+        print("✅ Библиотека gpiod доступна")
+    except ImportError:
+        print("❌ Библиотека gpiod не установлена")
+        print("Установите её командой: sudo apt install python3-libgpiod")
+        return
+    
+    # Настройка ZMQ
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:5555")
+    
+    # Инициализация робота
+    try:
+        robot = RobotController()
+        print("✅ Робот инициализирован успешно")
+        print("📍 Адрес для подключения: tcp://[IP_РОБОТА]:5555")
+        print("📝 Ожидание команд...")
+        print("Доступные команды: forward, backward, left, right, stop, speed:X.X")
+        print("=" * 50)
+    except Exception as e:
+        print(f"❌ ОШИБКА ИНИЦИАЛИЗАЦИИ: {e}")
+        return
+    
+    try:
+        while True:
+            # Ожидаем команду от клиента
+            message = socket.recv_string()
+            print(f"📨 Получена команда: {message}")
+            
+            # Выполняем команду
+            robot.execute_command(message)
+            
+            # Отправляем подтверждение
+            response = {
+                "status": "success",
+                "command": message,
+                "speed": robot.current_speed
+            }
+            socket.send_string(json.dumps(response))
+            
+    except KeyboardInterrupt:
+        print("\n🛑 Остановка сервера...")
+    except Exception as e:
+        print(f"❌ Ошибка сервера: {e}")
+    finally:
+        print("🧹 Очистка ресурсов...")
+        robot.cleanup()
+        socket.close()
+        context.term()
+        print("🔴 Сервер остановлен")
+
+if __name__ == "__main__":
+    main()
