@@ -5,7 +5,7 @@ import numpy as np
 import time
 
 class VideoReceiver:
-    def __init__(self, host='192.168.1.100', port=5555):  # ЗАМЕНИТЕ НА IP РОБОТА!
+    def __init__(self, host='192.168.1.138', port=5555):  # ЗАМЕНИТЕ НА IP РОБОТА!
         self.host = host
         self.port = port
         self.context = zmq.Context()
@@ -68,5 +68,5 @@ class VideoReceiver:
 
 if __name__ == "__main__":
     # ЗАМЕНИТЕ '192.168.1.100' на реальный IP вашего робота!
-    receiver = VideoReceiver(host='192.168.1.100', port=5555)  # ← ВАЖНО!
+    receiver = VideoReceiver(host='192.168.1.139', port=5555)  # ← ВАЖНО!
     receiver.start_receiver()

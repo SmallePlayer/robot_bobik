@@ -90,8 +90,8 @@ def main_curses(stdscr, client):
             pass
 
 if __name__ == "__main__":
-    robot_ip = input("Введите IP адрес Raspberry Pi: ").strip()
-    client = RobotClientCurses(robot_ip)
+    #robot_ip = input("Введите IP адрес Raspberry Pi: ").strip()
+    client = RobotClientCurses("192.168.1.139")
     
     if client.connect():
         curses.wrapper(main_curses, client)
