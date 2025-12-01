@@ -1,160 +1,89 @@
 #!/usr/bin/env python3
 """
-Сервер управления роботом на Raspberry Pi с использованием RPi.GPIO
-Управление через ZMQ сокеты
+Сервер управления роботом на Raspberry Pi с использованием gpiod
+Библиотека gpiod работает на новых версиях Raspberry Pi OS (Bookworm и выше)
 """
 
 import zmq
 import json
 import time
-import threading
-import RPi.GPIO as GPIO
-
-class MotorController:
-    """Класс для управления одним мотором через H-мост"""
-    
-    def __init__(self, forward_pin, backward_pin, pwm_pin):
-        """
-        Инициализация мотора
-        forward_pin: GPIO пин для движения вперед
-        backward_pin: GPIO пин для движения назад
-        pwm_pin: GPIO пин для ШИМ (управление скоростью)
-        """
-        self.forward_pin = forward_pin
-        self.backward_pin = backward_pin
-        self.pwm_pin = pwm_pin
-        
-        # Настройка пинов
-        GPIO.setup(forward_pin, GPIO.OUT)
-        GPIO.setup(backward_pin, GPIO.OUT)
-        GPIO.setup(pwm_pin, GPIO.OUT)
-        
-        # Создание ШИМ объекта
-        self.pwm = GPIO.PWM(pwm_pin, 1000)  # Частота 1000 Гц
-        
-        # Запуск ШИМ с нулевой скоростью
-        self.pwm.start(0)
-        
-        # Изначально мотор выключен
-        GPIO.output(forward_pin, GPIO.LOW)
-        GPIO.output(backward_pin, GPIO.LOW)
-        
-    def forward(self, speed):
-        """Движение вперед с заданной скоростью (0-100%)"""
-        if speed > 0:
-            GPIO.output(self.forward_pin, GPIO.HIGH)
-            GPIO.output(self.backward_pin, GPIO.LOW)
-            self.pwm.ChangeDutyCycle(speed * 100)  # Преобразуем 0.0-1.0 в 0-100
-        else:
-            self.stop()
-    
-    def backward(self, speed):
-        """Движение назад с заданной скоростью (0-100%)"""
-        if speed > 0:
-            GPIO.output(self.forward_pin, GPIO.LOW)
-            GPIO.output(self.backward_pin, GPIO.HIGH)
-            self.pwm.ChangeDutyCycle(speed * 100)
-        else:
-            self.stop()
-    
-    def stop(self):
-        """Остановка мотора"""
-        GPIO.output(self.forward_pin, GPIO.LOW)
-        GPIO.output(self.backward_pin, GPIO.LOW)
-        self.pwm.ChangeDutyCycle(0)
+import gpiod
+from gpiod.line import Direction, Value
 
 class RobotController:
-    """Класс для управления роботом с двумя моторами"""
-    
     def __init__(self):
-        # Настройка нумерации пинов по GPIO (не по физическим номерам)
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
+        print("🤖 Инициализация робота с использованием gpiod...")
         
-        # Инициализация моторов
-        # Левый мотор: GPIO12 - вперед, GPIO13 - назад, GPIO26 - ШИМ
-        self.left_motor = MotorController(
-            forward_pin=12, 
-            backward_pin=13, 
-            pwm_pin=26
-        )
+        # Настройка пинов (GPIO номера)
+        self.LEFT_FORWARD = 12   # GPIO12
+        self.LEFT_BACKWARD = 13  # GPIO13
+        self.RIGHT_FORWARD = 19  # GPIO19
+        self.RIGHT_BACKWARD = 18 # GPIO18
         
-        # Правый мотор: GPIO19 - вперед, GPIO18 - назад, GPIO16 - ШИМ
-        self.right_motor = MotorController(
-            forward_pin=19, 
-            backward_pin=18, 
-            pwm_pin=16
-        )
+        # Создаем словарь для хранения линий GPIO
+        self.lines = {}
         
-        # Текущая скорость (0.0 до 1.0)
-        self.current_speed = 0.7
-        
-        # Флаг для плавной остановки
-        self.is_moving = False
-        
-    def forward(self, speed=None):
+        try:
+            # Получаем доступ к GPIO чипу (обычно gpiochip0)
+            self.chip = gpiod.Chip('gpiochip0')
+            print("✅ GPIO чип открыт успешно")
+            
+            # Настраиваем пины как выходы
+            pins_to_request = [
+                self.LEFT_FORWARD,
+                self.LEFT_BACKWARD,
+                self.RIGHT_FORWARD,
+                self.RIGHT_BACKWARD
+            ]
+            
+            # Запрашиваем линии GPIO
+            request = gpiod.line_request()
+            request.consumer = "robot_bobik"
+            request.request_type = gpiod.line_request.DIRECTION_OUTPUT
+            
+            self.lines = self.chip.get_lines(pins_to_request)
+            self.lines.request(request, default_vals=[0, 0, 0, 0])
+            
+            print(f"✅ Пины настроены: {pins_to_request}")
+            self.current_speed = 0.7
+            
+        except Exception as e:
+            print(f"❌ Ошибка инициализации GPIO: {e}")
+            print("Возможные причины:")
+            print("1. Не установлена библиотека gpiod: sudo apt install python3-libgpiod")
+            print("2. Недостаточно прав: запустите с sudo")
+            print("3. Неправильный чип: проверьте 'gpiodetect'")
+            raise
+    
+    def _set_motors(self, left_fwd, left_bck, right_fwd, right_bck):
+        """Установка состояний моторов"""
+        try:
+            # Устанавливаем значения для всех линий одновременно
+            values = [left_fwd, left_bck, right_fwd, right_bck]
+            self.lines.set_values(values)
+        except Exception as e:
+            print(f"❌ Ошибка установки значений GPIO: {e}")
+    
+    def forward(self):
         """Движение вперед"""
-        if speed is None:
-            speed = self.current_speed
-            
-        self.left_motor.forward(speed)
-        self.right_motor.forward(speed)
-        self.is_moving = True
-        
-    def backward(self, speed=None):
+        self._set_motors(1, 0, 1, 0)
+    
+    def backward(self):
         """Движение назад"""
-        if speed is None:
-            speed = self.current_speed
-            
-        self.left_motor.backward(speed)
-        self.right_motor.backward(speed)
-        self.is_moving = True
-        
-    def left(self, speed=None):
-        """Поворот налево (правый мотор вперед, левый назад или остановлен)"""
-        if speed is None:
-            speed = self.current_speed
-            
-        # Вариант 1: Разворот на месте
-        self.left_motor.backward(speed * 0.7)  # Неменьше скорость для плавности
-        self.right_motor.forward(speed)
-        self.is_moving = True
-        
-    def right(self, speed=None):
-        """Поворот направо"""
-        if speed is None:
-            speed = self.current_speed
-            
-        self.left_motor.forward(speed)
-        self.right_motor.backward(speed * 0.7)
-        self.is_moving = True
-        
+        self._set_motors(0, 1, 0, 1)
+    
+    def left(self):
+        """Поворот налево (правый вперед, левый назад)"""
+        self._set_motors(0, 1, 1, 0)
+    
+    def right(self):
+        """Поворот направо (левый вперед, правый назад)"""
+        self._set_motors(1, 0, 0, 1)
+    
     def stop(self):
         """Полная остановка"""
-        self.left_motor.stop()
-        self.right_motor.stop()
-        self.is_moving = False
-        
-    def set_speed(self, speed):
-        """Установка скорости движения (0.1 до 1.0)"""
-        if 0.1 <= speed <= 1.0:
-            self.current_speed = speed
-            
-            # Если робот движется, обновляем текущую скорость
-            if self.is_moving:
-                # Определяем текущее направление и обновляем
-                # В реальном проекте нужно отслеживать состояние
-                pass
-                
-            return True
-        return False
-        
-    def cleanup(self):
-        """Очистка ресурсов GPIO"""
-        self.stop()
-        time.sleep(0.1)
-        GPIO.cleanup()
-        
+        self._set_motors(0, 0, 0, 0)
+    
     def execute_command(self, command):
         """Выполняет команду движения"""
         try:
@@ -174,9 +103,9 @@ class RobotController:
                 self.stop()
                 print("⏹️  СТОП")
             elif command.startswith("speed:"):
-                # Изменение скорости: "speed:0.8"
                 new_speed = float(command.split(":")[1])
-                if self.set_speed(new_speed):
+                if 0.1 <= new_speed <= 1.0:
+                    self.current_speed = new_speed
                     print(f"🎚️  Скорость изменена: {new_speed}")
                 else:
                     print(f"❌ Некорректная скорость: {new_speed}")
@@ -185,25 +114,47 @@ class RobotController:
                 
         except Exception as e:
             print(f"❌ Ошибка выполнения команды: {e}")
+    
+    def cleanup(self):
+        """Очистка ресурсов"""
+        self.stop()
+        time.sleep(0.1)
+        if hasattr(self, 'lines') and self.lines:
+            self.lines.release()
+        if hasattr(self, 'chip') and self.chip:
+            self.chip.close()
+        print("🧹 GPIO ресурсы освобождены")
 
 def main():
+    print("=" * 50)
+    print("🤖 СЕРВЕР УПРАВЛЕНИЯ РОБОТОМ С GPIOd")
+    print("=" * 50)
+    
+    # Проверяем наличие библиотеки gpiod
+    try:
+        import gpiod
+        print("✅ Библиотека gpiod доступна")
+    except ImportError:
+        print("❌ Библиотека gpiod не установлена")
+        print("Установите её командой: sudo apt install python3-libgpiod")
+        return
+    
     # Настройка ZMQ
     context = zmq.Context()
-    socket = context.socket(zmq.REP)  # REP (reply) для ответов
-    socket.bind("tcp://*:5555")       # Слушаем на всех интерфейсах порт 5555
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:5555")
     
     # Инициализация робота
     try:
         robot = RobotController()
-        print("🤖 РОБОТ ИНИЦИАЛИЗИРОВАН УСПЕШНО")
+        print("✅ Робот инициализирован успешно")
+        print("📍 Адрес для подключения: tcp://[IP_РОБОТА]:5555")
+        print("📝 Ожидание команд...")
+        print("Доступные команды: forward, backward, left, right, stop, speed:X.X")
+        print("=" * 50)
     except Exception as e:
-        print(f"❌ ОШИБКА ИНИЦИАЛИЗАЦИИ РОБОТА: {e}")
+        print(f"❌ ОШИБКА ИНИЦИАЛИЗАЦИИ: {e}")
         return
-    
-    print("🤖 СЕРВЕР УПРАВЛЕНИЯ РОБОТОМ ЗАПУЩЕН")
-    print("📍 Адрес для подключения: tcp://[IP_РОБОТА]:5555")
-    print("📝 Ожидание команд...")
-    print("Доступные команды: forward, backward, left, right, stop, speed:X.X")
     
     try:
         while True:
@@ -223,7 +174,7 @@ def main():
             socket.send_string(json.dumps(response))
             
     except KeyboardInterrupt:
-        print("\n🛑 Остановка сервера по запросу пользователя...")
+        print("\n🛑 Остановка сервера...")
     except Exception as e:
         print(f"❌ Ошибка сервера: {e}")
     finally:
@@ -231,8 +182,7 @@ def main():
         robot.cleanup()
         socket.close()
         context.term()
-        print("🔴 Сервер остановлен, моторы выключены")
+        print("🔴 Сервер остановлен")
 
 if __name__ == "__main__":
-    # Для работы с GPIO требуется запуск с правами суперпользователя
     main()
