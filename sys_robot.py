@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Сервер управления роботом через sysfs (самый базовый способ)
+Не требует специальных библиотек, работает напрямую с файловой системой
+"""
+
+import zmq
+import json
+import time
+import os
+
+class SysfsRobotController:
+    def __init__(self):
+        print("🤖 Инициализация робота через sysfs...")
+        
+        # GPIO пины (номера BCM)
+        self.pins = {
+            'left_forward': 12,
+            'left_backward': 13,
+            'right_forward': 19,
+            'right_backward': 18
+        }
+        
+        # Экспортируем пины
+        for name, pin in self.pins.items():
+            try:
+                # Экспортируем пин
+                with open('/sys/class/gpio/export', 'w') as f:
+                    f.write(str(pin))
+                
+                # Ждем создания директории
+                time.sleep(0.1)
+                
+                # Настраиваем направление (выход)
+                direction_path = f'/sys/class/gpio/gpio{pin}/direction'
+                with open(direction_path, 'w') as f:
+                    f.write('out')
+                
+                # Устанавливаем низкий уровень
+                value_path = f'/sys/class/gpio/gpio{pin}/value'
+                with open(value_path, 'w') as f:
+                    f.write('0')
+                    
+                print(f"✅ Пин GPIO{pin} настроен")
+                
+            except Exception as e:
+                print(f"⚠️  Ошибка настройки пина {pin}: {e}")
+                # Если пин уже экспортирован, продолжаем
+        
+        self.current_speed = 0.7
+    
+    def _set_pin(self, pin_number, value):
+        """Установка значения пина (0 или 1)"""
+        try:
+            value_path = f'/sys/class/gpio/gpio{pin_number}/value'
+            with open(value_path, 'w') as f:
+                f.write('1' if value else '0')
+        except Exception as e:
+            print(f"❌ Ошибка установки пина {pin_number}: {e}")
+    
+    def _control_motors(self, lf, lb, rf, rb):
+        """Управление моторами"""
+        self._set_pin(self.pins['left_forward'], lf)
+        self._set_pin(self.pins['left_backward'], lb)
+        self._set_pin(self.pins['right_forward'], rf)
+        self._set_pin(self.pins['right_backward'], rb)
+    
+    def forward(self):
+        self._control_motors(1, 0, 1, 0)
+    
+    def backward(self):
+        self._control_motors(0, 1, 0, 1)
+    
+    def left(self):
+        self._control_motors(0, 1, 1, 0)
+    
+    def right(self):
+        self._control_motors(1, 0, 0, 1)
+    
+    def stop(self):
+        self._control_motors(0, 0, 0, 0)
+    
+    def execute_command(self, command):
+        """Выполняет команду движения"""
+        try:
+            if command == "forward":
+                self.forward()
+                print("🔼 ВПЕРЕД")
+            elif command == "backward":
+                self.backward()
+                print("🔽 НАЗАД")
+            elif command == "left":
+                self.left()
+                print("↩️  ВЛЕВО")
+            elif command == "right":
+                self.right()
+                print("↪️  ВПРАВО")
+            elif command == "stop":
+                self.stop()
+                print("⏹️  СТОП")
+            elif command.startswith("speed:"):
+                new_speed = float(command.split(":")[1])
+                if 0.1 <= new_speed <= 1.0:
+                    self.current_speed = new_speed
+                    print(f"🎚️  Скорость: {new_speed}")
+                else:
+                    print(f"❌ Некорректная скорость: {new_speed}")
+            else:
+                print(f"❌ Неизвестная команда: {command}")
+        except Exception as e:
+            print(f"❌ Ошибка: {e}")
+    
+    def cleanup(self):
+        """Очистка ресурсов"""
+        self.stop()
+        time.sleep(0.1)
+        
+        # Неэкспортируем пины (оставляем как есть)
+        # чтобы не мешать другим приложениям
+        print("🧹 Робот остановлен")
+
+# Остальной код (main функция) остается таким же как в предыдущих примерах
