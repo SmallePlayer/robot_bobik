@@ -1,6 +1,7 @@
 import zmq
 from gpiozero import Robot
 import json
+from command_history import CommandHistory
 
 class RobotController:
     def __init__(self):
@@ -8,35 +9,48 @@ class RobotController:
         self.robot = Robot(left=(12, 13), right=(19, 18))
         self.current_speed = 0.7  # Базовая скорость (0.0 до 1.0)
         
+        # Инициализация истории команд
+        self.history = CommandHistory('robot_command_history.json')
+        self.history.load_history()
+        self.history.print_history(10)
+        
     def execute_command(self, command):
         """Выполняет команду движения"""
         try:
             if command == "forward":
                 self.robot.forward(self.current_speed)
                 print("🔼 ДВИЖЕНИЕ ВПЕРЕД")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "backward":
                 self.robot.backward(self.current_speed)
                 print("🔽 ДВИЖЕНИЕ НАЗАД")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "left":
                 self.robot.left(self.current_speed)
                 print("↩️  ПОВОРОТ ВЛЕВО")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "right":
                 self.robot.right(self.current_speed)
                 print("↪️  ПОВОРОТ ВПРАВО")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "stop":
                 self.robot.stop()
                 print("⏹️  СТОП")
+                self.history.add_command(command, "success")
             elif command.startswith("speed:"):
                 # Изменение скорости: "speed:0.8"
                 new_speed = float(command.split(":")[1])
                 if 0.1 <= new_speed <= 1.0:
                     self.current_speed = new_speed
                     print(f"🎚️  Скорость изменена: {new_speed}")
+                    self.history.add_command(command, "success", {"new_speed": new_speed})
             else:
                 print(f"❌ Неизвестная команда: {command}")
+                self.history.add_command(command, "error", {"reason": "unknown_command"})
                 
         except Exception as e:
             print(f"❌ Ошибка выполнения команды: {e}")
+            self.history.add_command(command, "error", {"error": str(e)})
 
 def main():
     # Настройка ZMQ

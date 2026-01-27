@@ -9,6 +9,7 @@ import json
 import time
 import gpiod
 from gpiod.line import Direction
+from command_history import CommandHistory
 
 class GPIODRobotController:
     def __init__(self):
@@ -52,6 +53,11 @@ class GPIODRobotController:
                 print(f"❌ Ошибка настройки пина {pin}: {e}")
         
         self.current_speed = 0.7
+        
+        # Инициализация истории команд
+        self.history = CommandHistory('robot_command_history.json')
+        self.history.load_history()
+        self.history.print_history(10)
     
     def _set_motors(self, lf, lb, rf, rb):
         """Установка состояний моторов"""
@@ -84,29 +90,38 @@ class GPIODRobotController:
             if command == "forward":
                 self.forward()
                 print("🔼 ВПЕРЕД")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "backward":
                 self.backward()
                 print("🔽 НАЗАД")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "left":
                 self.left()
                 print("↩️  ВЛЕВО")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "right":
                 self.right()
                 print("↪️  ВПРАВО")
+                self.history.add_command(command, "success", {"speed": self.current_speed})
             elif command == "stop":
                 self.stop()
                 print("⏹️  СТОП")
+                self.history.add_command(command, "success")
             elif command.startswith("speed:"):
                 new_speed = float(command.split(":")[1])
                 if 0.1 <= new_speed <= 1.0:
                     self.current_speed = new_speed
                     print(f"🎚️  Скорость: {new_speed}")
+                    self.history.add_command(command, "success", {"new_speed": new_speed})
                 else:
                     print(f"❌ Некорректная скорость: {new_speed}")
+                    self.history.add_command(command, "error", {"reason": "invalid_speed"})
             else:
                 print(f"❌ Неизвестная команда: {command}")
+                self.history.add_command(command, "error", {"reason": "unknown_command"})
         except Exception as e:
             print(f"❌ Ошибка: {e}")
+            self.history.add_command(command, "error", {"error": str(e)})
     
     def cleanup(self):
         """Очистка ресурсов"""
