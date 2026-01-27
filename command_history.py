@@ -26,7 +26,23 @@ class CommandHistory:
         if os.path.exists(self.history_file):
             try:
                 with open(self.history_file, 'r', encoding='utf-8') as f:
-                    self.commands = json.load(f)
+                    data = json.load(f)
+                
+                # Валидация загруженных данных
+                if not isinstance(data, list):
+                    print("⚠️  Неверный формат файла истории (ожидается список)")
+                    self.commands = []
+                    return self.commands
+                
+                # Проверяем каждую запись на наличие обязательных полей
+                validated_commands = []
+                for entry in data:
+                    if isinstance(entry, dict) and 'timestamp' in entry and 'command' in entry and 'status' in entry:
+                        validated_commands.append(entry)
+                    else:
+                        print(f"⚠️  Пропущена некорректная запись: {entry}")
+                
+                self.commands = validated_commands
                 
                 # Применяем ограничение max_entries к загруженной истории
                 if len(self.commands) > self.max_entries:
@@ -35,6 +51,9 @@ class CommandHistory:
                 
                 print(f"📚 Загружено {len(self.commands)} команд из истории")
                 return self.commands
+            except json.JSONDecodeError as e:
+                print(f"⚠️  Ошибка парсинга JSON: {e}")
+                self.commands = []
             except Exception as e:
                 print(f"⚠️  Ошибка загрузки истории: {e}")
                 self.commands = []
